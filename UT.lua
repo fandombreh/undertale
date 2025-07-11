@@ -1,10 +1,10 @@
--- Clear old system
-for _, obj in ipairs({"UndertaleArena", "UndertaleRemote", "SoulRemote", "TurnSystem", "BossSystem"}) do
-	if workspace:FindFirstChild(obj) then workspace[obj]:Destroy() end
-	if game.ReplicatedStorage:FindFirstChild(obj) then game.ReplicatedStorage[obj]:Destroy() end
+-- Cleanup
+for _, name in ipairs({"UndertaleArena", "SoulRemote", "UndertaleUI", "AttackTool", "SoulColor", "CharacterSelect", "HealthUpdater"}) do
+	if workspace:FindFirstChild(name) then workspace[name]:Destroy() end
+	if game.ReplicatedStorage:FindFirstChild(name) then game.ReplicatedStorage[name]:Destroy() end
+	if game.StarterGui:FindFirstChild(name) then game.StarterGui[name]:Destroy() end
+	if game.StarterPack:FindFirstChild(name) then game.StarterPack[name]:Destroy() end
 end
-if game.StarterGui:FindFirstChild("UndertaleUI") then game.StarterGui.UndertaleUI:Destroy() end
-if game.StarterPack:FindFirstChild("AttackTool") then game.StarterPack.AttackTool:Destroy() end
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,14 +13,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local arena = Instance.new("Part", workspace)
 arena.Name = "UndertaleArena"
 arena.Size = Vector3.new(200, 1, 200)
-arena.Anchored = true
 arena.Position = Vector3.new(0, 0, 0)
+arena.Anchored = true
 arena.BrickColor = BrickColor.new("Really black")
 
--- Remotes
-local attackRemote = Instance.new("RemoteEvent", ReplicatedStorage)
-attackRemote.Name = "UndertaleRemote"
-
+-- Remote for SoulColor
 local soulRemote = Instance.new("RemoteEvent", ReplicatedStorage)
 soulRemote.Name = "SoulRemote"
 
@@ -28,155 +25,129 @@ soulRemote.Name = "SoulRemote"
 local tool = Instance.new("Tool")
 tool.Name = "AttackTool"
 tool.RequiresHandle = false
+
 local toolScript = Instance.new("LocalScript", tool)
 toolScript.Source = [[
-local remote = game.ReplicatedStorage:WaitForChild("UndertaleRemote")
+local remote = game.ReplicatedStorage:WaitForChild("SoulRemote")
 script.Parent.Activated:Connect(function()
-	remote:FireServer()
+	remote:FireServer("Shoot")
 end)
 ]]
+
 tool.Parent = game.StarterPack
 
--- Server-side attack logic
-local serverAttack = Instance.new("Script", attackRemote)
-serverAttack.Source = [[
-script.Parent.OnServerEvent:Connect(function(player)
-	local char = player.Character
-	if not char then return end
-	local p = Instance.new("Part")
-	p.Size = Vector3.new(1,1,1)
-	p.Shape = Enum.PartType.Ball
-	p.Material = Enum.Material.Neon
-	p.BrickColor = BrickColor.Red()
-	p.Position = char.HumanoidRootPart.Position + Vector3.new(0,2,0)
-	p.Velocity = char.HumanoidRootPart.CFrame.LookVector * 50
-	p.CanCollide = false
-	p.Anchored = false
-	p.Parent = workspace
-	game:GetService("Debris"):AddItem(p,3)
-	p.Touched:Connect(function(hit)
-		local hum = hit.Parent:FindFirstChild("Humanoid")
-		if hum and hit.Parent ~= char then
-			hum:TakeDamage(15)
-			p:Destroy()
-		end
-	end)
+-- Soul Remote Handler
+local soulHandler = Instance.new("Script", soulRemote)
+soulHandler.Name = "SoulColor"
+soulHandler.Source = [[
+script.Parent.OnServerEvent:Connect(function(player, mode)
+	if mode == "Shoot" then
+		local char = player.Character
+		if not char then return end
+		local part = Instance.new("Part")
+		part.Size = Vector3.new(1,1,1)
+		part.Shape = Enum.PartType.Ball
+		part.Material = Enum.Material.Neon
+		part.BrickColor = BrickColor.Red()
+		part.Position = char.HumanoidRootPart.Position + Vector3.new(0,2,0)
+		part.Velocity = char.HumanoidRootPart.CFrame.LookVector * 60
+		part.CanCollide = false
+		part.Anchored = false
+		part.Parent = workspace
+		game:GetService("Debris"):AddItem(part, 3)
+
+		part.Touched:Connect(function(hit)
+			local hum = hit.Parent and hit.Parent:FindFirstChild("Humanoid")
+			if hum and hit.Parent ~= char then
+				hum:TakeDamage(25)
+				part:Destroy()
+			end
+		end)
+	end
 end)
 ]]
 
--- Health Bars
-for _, p in ipairs(Players:GetPlayers()) do
-	if p.Character then
-		local hb = Instance.new("BillboardGui", p.Character:FindFirstChild("Head") or p.Character)
-		hb.Name = "HealthDisplay"
-		hb.Size = UDim2.new(4,0,0.5,0)
-		hb.StudsOffset = Vector3.new(0,2,0)
-		hb.AlwaysOnTop = true
-		local bar = Instance.new("Frame", hb)
-		bar.Size = UDim2.new(1,0,1,0)
-		bar.BackgroundColor3 = Color3.fromRGB(255,0,0)
+soulHandler.Parent = ReplicatedStorage
+
+-- Health Bar Updater
+for _, player in pairs(Players:GetPlayers()) do
+	local char = player.Character
+	if char then
+		local gui = Instance.new("BillboardGui", char:FindFirstChild("Head") or char)
+		gui.Size = UDim2.new(4,0,0.5,0)
+		gui.StudsOffset = Vector3.new(0,2,0)
+		gui.AlwaysOnTop = true
+		gui.Name = "HealthUpdater"
+
+		local bar = Instance.new("Frame", gui)
+		bar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+		bar.Size = UDim2.new(1, 0, 1, 0)
 		bar.BorderSizePixel = 0
+
+		local updateScript = Instance.new("LocalScript", bar)
+		updateScript.Source = [[
+		local player = game.Players.LocalPlayer
+		local char = player.Character or player.CharacterAdded:Wait()
+		local hum = char:WaitForChild("Humanoid")
+		local bar = script.Parent
+		hum.HealthChanged:Connect(function()
+			bar.Size = UDim2.new(hum.Health / hum.MaxHealth, 0, 1, 0)
+		end)
+		]]
 	end
 end
 
--- Character Selection + UI
-local gui = Instance.new("ScreenGui")
+-- UI Setup
+local gui = Instance.new("ScreenGui", game.StarterGui)
 gui.Name = "UndertaleUI"
-gui.ResetOnSpawn = false
 
--- Heart
-local heart = Instance.new("Frame", gui)
-heart.Name = "Heart"
-heart.Size = UDim2.new(0,20,0,20)
-heart.Position = UDim2.new(0.5,-10,0.5,-10)
-heart.BackgroundColor3 = Color3.fromRGB(255,0,0)
-heart.BorderSizePixel = 0
+-- Soul Button
+local soulBtn = Instance.new("TextButton", gui)
+soulBtn.Size = UDim2.new(0, 130, 0, 30)
+soulBtn.Position = UDim2.new(0, 10, 0, 10)
+soulBtn.Text = "Soul: RED"
+soulBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
 
--- Soul Color Select
-local soulSelector = Instance.new("TextButton", gui)
-soulSelector.Size = UDim2.new(0,120,0,30)
-soulSelector.Position = UDim2.new(0,10,0,10)
-soulSelector.Text = "Soul: RED"
-soulSelector.BackgroundColor3 = Color3.fromRGB(255,50,50)
-soulSelector.MouseButton1Click:Connect(function()
-	local options = {"RED", "BLUE", "GREEN"}
-	local idx = table.find(options, soulSelector.Text:split(": ")[2]) or 1
-	local next = (idx % #options) + 1
-	local newColor = options[next]
-	soulSelector.Text = "Soul: "..newColor
-	soulRemote:FireServer(newColor)
-end)
-
--- Drag Heart
-local dragScript = Instance.new("LocalScript", heart)
-dragScript.Source = [[
-local UIS = game:GetService("UserInputService")
-local heart = script.Parent
-local dragging = false
-local input, startPos
-
-heart.InputBegan:Connect(function(i)
-	if i.UserInputType == Enum.UserInputType.MouseButton1 then
-		dragging = true
-		input = i
-		startPos = i.Position
-	end
-end)
-
-UIS.InputChanged:Connect(function(i)
-	if dragging and i == input then
-		local delta = i.Position - startPos
-		heart.Position = heart.Position + UDim2.new(0, delta.X, 0, delta.Y)
-		startPos = i.Position
-	end
-end)
-
-UIS.InputEnded:Connect(function(i)
-	if i == input then
-		dragging = false
-	end
-end)
-]]
-
-gui.Parent = game.StarterGui
-
--- Soul Behavior Server
-local soulScript = Instance.new("Script", soulRemote)
+local soulScript = Instance.new("LocalScript", soulBtn)
 soulScript.Source = [[
-script.Parent.OnServerEvent:Connect(function(player, color)
-	local char = player.Character
-	if not char then return end
-	local root = char:FindFirstChild("HumanoidRootPart")
-	if not root then return end
-	if color == "BLUE" then
-		root.CustomPhysicalProperties = PhysicalProperties.new(10,0.3,0.5)
+local btn = script.Parent
+local player = game.Players.LocalPlayer
+local rem = game.ReplicatedStorage:WaitForChild("SoulRemote")
+local colors = {"RED", "BLUE", "GREEN", "PURPLE"}
+local i = 1
+
+btn.MouseButton1Click:Connect(function()
+	i = (i % #colors) + 1
+	local color = colors[i]
+	btn.Text = "Soul: "..color
+	if color == "RED" then
+		btn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+	elseif color == "BLUE" then
+		btn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
 	elseif color == "GREEN" then
-		player.Character.Humanoid.WalkSpeed = 8
-	elseif color == "RED" then
-		root.CustomPhysicalProperties = nil
+		btn.BackgroundColor3 = Color3.fromRGB(0,255,0)
+	elseif color == "PURPLE" then
+		btn.BackgroundColor3 = Color3.fromRGB(170,0,255)
+	end
+	rem:FireServer(color)
+end)
+]]
+
+-- Server-side soul color behavior
+soulRemote.OnServerEvent:Connect(function(player, color)
+	if color == "RED" then
 		player.Character.Humanoid.WalkSpeed = 16
+		player.Character.Humanoid.JumpPower = 50
+	elseif color == "BLUE" then
+		player.Character.Humanoid.WalkSpeed = 6
+		player.Character.Humanoid.JumpPower = 100
+	elseif color == "GREEN" then
+		player.Character.Humanoid.WalkSpeed = 12
+		player.Character.Humanoid.JumpPower = 30
+	elseif color == "PURPLE" then
+		player.Character.Humanoid.WalkSpeed = 8
+		player.Character.Humanoid.JumpPower = 70
 	end
 end)
-]]
 
--- Boss System
-local bossRemote = Instance.new("RemoteEvent", ReplicatedStorage)
-bossRemote.Name = "BossSystem"
-
-local bossHandler = Instance.new("Script", bossRemote)
-bossHandler.Source = [[
-script.Parent.OnServerEvent:Connect(function(player)
-	for _, plr in pairs(game.Players:GetPlayers()) do
-		if plr ~= player and plr.Character then
-			plr.Character:FindFirstChild("Humanoid"):TakeDamage(25)
-		end
-	end
-end)
-]]
-
--- Turn-based (optional toggle)
-local turnToggle = Instance.new("BoolValue", ReplicatedStorage)
-turnToggle.Name = "TurnSystem"
-turnToggle.Value = false
-
-print("✅ Undertale System Expanded: Soul, Turns, UI, Boss, Health Bars ready.")
+print("✅ Undertale PvP system: Soul UI, attacks, health bars, arena, and movement logic ready.")
